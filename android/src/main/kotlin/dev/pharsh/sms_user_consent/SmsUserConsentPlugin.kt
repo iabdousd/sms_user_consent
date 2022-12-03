@@ -6,7 +6,6 @@ import androidx.annotation.NonNull
 import com.google.android.gms.auth.api.credentials.Credential
 import com.google.android.gms.auth.api.credentials.Credentials
 import com.google.android.gms.auth.api.credentials.HintRequest
-import com.google.android.gms.auth.api.phone.SmsRetriever
 import com.google.android.gms.common.api.CommonStatusCodes
 import com.google.android.gms.common.api.Status
 
@@ -25,7 +24,6 @@ class SmsUserConsentPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
 
     companion object {
         private const val CREDENTIAL_PICKER_REQUEST = 1
-        private const val SMS_CONSENT_REQUEST = 2
     }
 
     override fun onAttachedToEngine(@NonNull flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
@@ -37,12 +35,6 @@ class SmsUserConsentPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         when (call.method) {
             "requestPhoneNumber" -> {
                 requestHint()
-                result.success(null)
-            }
-            "requestSms" -> {
-                SmsRetriever.getClient(mActivity.applicationContext).startSmsUserConsent(call.argument<String>("senderPhoneNumber"))
-
-                mActivity.registerReceiver(smsVerificationReceiver, IntentFilter(SmsRetriever.SMS_RETRIEVED_ACTION))
                 result.success(null)
             }
         }
@@ -62,18 +54,6 @@ class SmsUserConsentPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
                         channel.invokeMethod("selectedPhoneNumber", data.getParcelableExtra<Credential>(Credential.EXTRA_KEY)?.id)
                     } else {
                         channel.invokeMethod("selectedPhoneNumber", null)
-                    }
-                    true
-                }
-                SMS_CONSENT_REQUEST -> {// Obtain the phone number from the result
-                    if (resultCode == Activity.RESULT_OK && data != null) {
-                        channel
-                                .invokeMethod("receivedSms", data.getStringExtra(SmsRetriever.EXTRA_SMS_MESSAGE))
-                        mActivity.unregisterReceiver(smsVerificationReceiver)
-                    } else {
-                        // Consent denied. User can type OTC manually.
-                        channel.invokeMethod("receivedSms", null)
-                        mActivity.unregisterReceiver(smsVerificationReceiver)
                     }
                     true
                 }
@@ -99,28 +79,4 @@ class SmsUserConsentPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
         )
     }
 
-    private val smsVerificationReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) {
-            if (SmsRetriever.SMS_RETRIEVED_ACTION == intent.action) {
-                val extras = intent.extras
-                val smsRetrieverStatus = extras?.get(SmsRetriever.EXTRA_STATUS) as Status
-
-                when (smsRetrieverStatus.statusCode) {
-                    CommonStatusCodes.SUCCESS -> {
-                        // Get consent intent
-                        try {
-                            // Start activity to show consent dialog to user, activity must be started in
-                            // 5 minutes, otherwise you'll receive another TIMEOUT intent
-                            mActivity.startActivityForResult(extras.getParcelable(SmsRetriever.EXTRA_CONSENT_INTENT), SMS_CONSENT_REQUEST)
-                        } catch (e: ActivityNotFoundException) {
-                            // Handle the exception ...
-                        }
-                    }
-                    CommonStatusCodes.TIMEOUT -> {
-                        // Time out occurred, handle the error.
-                    }
-                }
-            }
-        }
-    }
 }
